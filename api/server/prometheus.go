@@ -12,7 +12,7 @@ func NewPrometheusServer(port int) {
 	logrus.Info("Starting Prometheus Server...")
 
 	pe, err := prometheus.NewExporter(prometheus.Options{
-		Namespace: "ocmetricstutorial",
+		Namespace: "kappa",
 	})
 
 	if err != nil {
