@@ -9,8 +9,6 @@ import (
 )
 
 func NewPrometheusServer(port int) {
-	logrus.Info("Starting Prometheus Server...")
-
 	pe, err := prometheus.NewExporter(prometheus.Options{
 		Namespace: "kappa",
 	})

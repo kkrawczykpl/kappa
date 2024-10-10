@@ -46,6 +46,8 @@ var (
 	eventsMeasure  = common.MakeMeasure("docker_events", "Docker events", "")
 	eventAction    = common.MakeKey("event_action")
 	eventType      = common.MakeKey("event_type")
+	containerName  = common.MakeKey("container_name")
+	containerImage = common.MakeKey("container_image")
 )
 
 var (
@@ -57,10 +59,20 @@ var (
 		// Latency in buckets:
 		// [>=0ms, >=25ms, >=50ms, >=75ms, >=100ms, >=200ms, >=400ms, >=600ms, >=800ms, >=1s, >=2s, >=4s, >=6s]
 		Aggregation: view.Distribution(0, 25, 50, 75, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000),
-		TagKeys:     []tag.Key{}}
+		TagKeys:     []tag.Key{tagName, tagStatus}}
+
+	EventsView = &view.View{
+		Name:        eventsMeasure.Name(),
+		Measure:     eventsMeasure,
+		Description: eventsMeasure.Description(),
+
+		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{eventAction, eventType, containerName, containerImage},
+	}
 )
 
 func NewClient(ctx context.Context) DockerClient {
+	logrus.Info("Starting Docker Agent...")
 	client, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		logrus.WithError(err).Fatal("An error occured while creating new Docker client.")
@@ -91,9 +103,12 @@ func (dockerWrap *dockerWrap) listenEventLoop(ctx context.Context) {
 }
 
 func RegisterViews() {
-	view.Register(LatencyView)
 
 	if err := view.Register(LatencyView); err != nil {
+		logrus.WithError(err).Fatalf("Failed to register views: %v", err)
+	}
+
+	if err := view.Register(EventsView); err != nil {
 		logrus.WithError(err).Fatalf("Failed to register views: %v", err)
 	}
 }
@@ -135,7 +150,7 @@ func makeTracker(ctx context.Context, name string) (context.Context, func(error)
 
 func (d *dockerWrap) makeListener(ctx context.Context, listener chan *events.Message) {
 
-	events, errors := d.docker.Events(ctx, types.EventsOptions{
+	events, errors := d.docker.Events(context.Background(), types.EventsOptions{
 		Since: strconv.FormatInt(time.Now().Unix(), 10),
 		Filters: filters.NewArgs(
 			filters.Arg("type", string(events.ContainerEventType)),
@@ -148,7 +163,6 @@ func (d *dockerWrap) makeListener(ctx context.Context, listener chan *events.Mes
 			logrus.WithError(err).Fatal("Events listener error!")
 
 		case event := <-events:
-			logrus.Printf("Got an event: %s", <-events)
 			listener <- &event
 
 		case <-ctx.Done():
@@ -176,6 +190,8 @@ func (d *dockerWrap) listenEvents(ctx context.Context) error {
 			ctx, err := tag.New(context.Background(),
 				tag.Upsert(eventAction, string(ev.Action)),
 				tag.Upsert(eventType, string(ev.Type)),
+				tag.Upsert(containerName, string(ev.Actor.Attributes["name"])),
+				tag.Upsert(containerImage, string(ev.Actor.Attributes["image"])),
 			)
 
 			if err != nil {
