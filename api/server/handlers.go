@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	common "github.com/kkrawczykpl/kappa/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -85,4 +86,38 @@ func handleStartContainer(ctx *gin.Context) {
 		ctx.JSON(http.StatusGatewayTimeout, gin.H{"success": "false", "error": "Timeout waiting for container status"})
 		return
 	}
+}
+
+func handleExecCommand(ctx *gin.Context) {
+
+	tasksChan, ok := ctx.MustGet("tasks").(chan Task)
+
+	if !ok {
+		logrus.Error("An error occured while fetching tasks channel")
+		ctx.JSON(http.StatusInternalServerError, gin.H{"success": "false"})
+		return
+	}
+
+	id := ctx.PostForm("id")
+	cmd := common.SplitCommand(ctx.PostForm("command"))
+
+	responseChannel := make(chan string)
+
+	tasksChan <- Task{Type: Exec, Data: &ExecData{Id: id, Command: cmd}, ResponseChannel: responseChannel}
+
+	select {
+	case response := <-responseChannel:
+		if response == "error" {
+			ctx.JSON(http.StatusOK, gin.H{"success": "false"})
+		} else {
+			ctx.JSON(http.StatusOK, gin.H{"success": "true", "message": response})
+		}
+	case <-time.After(60 * time.Second):
+		ctx.JSON(http.StatusOK, gin.H{"success": "false", "error": "Timeout waiting for container status"})
+	}
+
+}
+
+func handleLogs(ctx *gin.Context) {
+
 }

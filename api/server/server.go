@@ -29,6 +29,7 @@ type TaskData interface{}
 const (
 	Create TaskType = "create"
 	Start  TaskType = "start"
+	Exec   TaskType = "exec"
 )
 
 type Task struct {
@@ -44,6 +45,11 @@ type CreateData struct {
 
 type StartData struct {
 	Id string `json:"id"`
+}
+
+type ExecData struct {
+	Id      string   `json:"id"`
+	Command []string `json:"command"`
 }
 
 func NewServer(ctx context.Context) *Server {
@@ -95,9 +101,11 @@ func (server *Server) registerHandlers() {
 	engine.GET("/ping", handlePing)
 	engine.POST("/start_container", handleStartContainer)
 	engine.POST("/create_container", handleCreateContainer)
+	engine.POST("/exec_container_command", handleExecCommand)
 }
 
 func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
+
 	for {
 		select {
 		case task := <-*tasksChan:
@@ -110,7 +118,6 @@ func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
 				if err != nil {
 					logrus.WithError(err).Error("An error occured while pulling Docker Image!")
 					task.ResponseChannel <- "error"
-					return
 				}
 
 				io.Copy(os.Stdout, reader)
@@ -122,19 +129,32 @@ func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
 				if err != nil {
 					logrus.WithError(err).Errorf("An error occured while creating container! Payload: %s", data)
 					task.ResponseChannel <- "error"
-					return
+				} else {
+					task.ResponseChannel <- response.ID
 				}
-
-				task.ResponseChannel <- response.ID
 			case Start:
 				data := task.Data.(*StartData)
 				if err := server.Agent.StartContainer(ctx, data.Id); err != nil {
 					logrus.Errorf("An error occured while starting container! Container ID: %s", data.Id)
 					task.ResponseChannel <- "error"
-					return
+				} else {
+					task.ResponseChannel <- "started"
 				}
 
-				task.ResponseChannel <- "started"
+			case Exec:
+				data := task.Data.(*ExecData)
+				output, err := server.Agent.ExecCommand(ctx, data.Id, container.ExecOptions{
+					Cmd:          data.Command,
+					AttachStdout: true,
+					AttachStderr: true,
+				})
+
+				if err != nil {
+					logrus.Errorf("An error occured while executing command in container! Container ID: %s Command: %s", data.Id, data.Command)
+					task.ResponseChannel <- "error"
+				} else {
+					task.ResponseChannel <- output
+				}
 			}
 		case <-ctx.Done():
 			return
