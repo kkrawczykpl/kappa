@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 )
 
@@ -106,5 +111,26 @@ func (agent *DockerAgent) ExecCommand(ctx context.Context, id string, opts conta
 	}
 
 	return outputBuff.String(), nil
+
+}
+
+func (agent *DockerAgent) PullImageAndCreateContainer(ctx context.Context, opts *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *v1.Platform, containerName string) (containerId string, err error) {
+	reader, err := agent.Client.PullImage(ctx, opts.Image, image.PullOptions{})
+
+	if err != nil {
+		logrus.WithError(err).Error("An error occured while pulling Docker Image!")
+		return "", err
+	}
+
+	io.Copy(os.Stdout, reader)
+
+	response, err := agent.Client.CreateContainer(ctx, opts, hostConfig, networkingConfig, platform, containerName)
+
+	if err != nil {
+		logrus.WithError(err).Errorf("An error occured while creating container!")
+		return "", err
+	}
+
+	return response.ID, nil
 
 }

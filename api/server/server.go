@@ -2,11 +2,9 @@ package server
 
 import (
 	"context"
-	"io"
 	"os"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
 	"github.com/gin-gonic/gin"
 	"github.com/kkrawczykpl/kappa/docker"
 	"github.com/sirupsen/logrus"
@@ -114,22 +112,13 @@ func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
 			case Create:
 				data := task.Data.(*CreateData)
 
-				reader, err := server.Agent.Client.PullImage(ctx, data.Config.Image, image.PullOptions{})
-
-				if err != nil {
-					logrus.WithError(err).Error("An error occured while pulling Docker Image!")
-					task.ResponseChannel <- "error"
-				}
-
-				io.Copy(os.Stdout, reader)
-
-				response, err := server.Agent.Client.CreateContainer(ctx, data.Config, data.HostConfig, nil, nil, data.Name)
+				id, err := server.Agent.PullImageAndCreateContainer(ctx, data.Config, data.HostConfig, nil, nil, data.Name)
 
 				if err != nil {
 					logrus.WithError(err).Errorf("An error occured while creating container! Payload: %s", data)
 					task.ResponseChannel <- "error"
 				} else {
-					task.ResponseChannel <- response.ID
+					task.ResponseChannel <- id
 				}
 			case Start:
 				data := task.Data.(*StartData)
