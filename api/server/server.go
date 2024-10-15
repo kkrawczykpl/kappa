@@ -39,8 +39,9 @@ type Task struct {
 }
 
 type CreateData struct {
-	Image string `json:"image"`
-	Name  string `json:"name"`
+	Config     *container.Config     `json:"config"`
+	HostConfig *container.HostConfig `json:"host_config"`
+	Name       string                `json:"name"`
 }
 
 type StartData struct {
@@ -113,7 +114,7 @@ func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
 			case Create:
 				data := task.Data.(*CreateData)
 
-				reader, err := server.Agent.Client.PullImage(ctx, data.Image, image.PullOptions{})
+				reader, err := server.Agent.Client.PullImage(ctx, data.Config.Image, image.PullOptions{})
 
 				if err != nil {
 					logrus.WithError(err).Error("An error occured while pulling Docker Image!")
@@ -122,9 +123,7 @@ func (server *Server) eventLoop(ctx context.Context, tasksChan *chan Task) {
 
 				io.Copy(os.Stdout, reader)
 
-				response, err := server.Agent.Client.CreateContainer(ctx, &container.Config{
-					Image: data.Image,
-				}, nil, nil, nil, data.Name)
+				response, err := server.Agent.Client.CreateContainer(ctx, data.Config, data.HostConfig, nil, nil, data.Name)
 
 				if err != nil {
 					logrus.WithError(err).Errorf("An error occured while creating container! Payload: %s", data)

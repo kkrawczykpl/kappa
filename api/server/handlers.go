@@ -1,9 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/gin-gonic/gin"
 	common "github.com/kkrawczykpl/kappa/utils"
 	"github.com/sirupsen/logrus"
@@ -32,10 +35,39 @@ func handleCreateContainer(ctx *gin.Context) {
 
 	image := ctx.PostForm("image")
 	containerName := ctx.PostForm("name")
+	exposedPort := ctx.PostForm("exposed_port")
+
+	// @TODO: Add validation
+	// @TODO: Now only exposing same port for host and container is supported. Make support for smth like host_port:container_port
+	var containerConfig *container.Config
+	var hostConfig *container.HostConfig = nil
+
+	if exposedPort == "" {
+
+		containerConfig = &container.Config{
+			Image: image,
+		}
+	} else {
+		containerConfig = &container.Config{
+			Image: image,
+			ExposedPorts: nat.PortSet{
+				nat.Port(fmt.Sprintf("%s/tcp", exposedPort)): struct{}{},
+			},
+		}
+
+		hostConfig = &container.HostConfig{
+			PortBindings: nat.PortMap{
+				nat.Port(fmt.Sprintf("%s/tcp", exposedPort)): []nat.PortBinding{
+					{HostIP: "0.0.0.0", HostPort: exposedPort},
+				},
+			},
+		}
+	}
 
 	payload := &CreateData{
-		Image: image,
-		Name:  containerName,
+		Config:     containerConfig,
+		HostConfig: hostConfig,
+		Name:       containerName,
 	}
 
 	responseChannel := make(chan string)
